@@ -1,0 +1,17 @@
+# dependências
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# segredos: nenhum .env vai para o Git (só o exemplo, se um dia existir)
+.env*
+!.env.example
+
+# sistema
+.DS_Store
+*.pem
+npm-debug.log*
