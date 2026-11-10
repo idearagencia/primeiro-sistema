@@ -7,7 +7,7 @@
 		"node": ">=22"
 	},
 	"scripts": {
-		"comecar": "npm run conferir && npm run dev",
+		"comecar": "node scripts/comecar.mjs",
 		"dev": "node scripts/dev.mjs",
 		"conferir": "node scripts/conferir.mjs",
 		"build": "next build",
