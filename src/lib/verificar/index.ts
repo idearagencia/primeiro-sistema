@@ -1,0 +1,381 @@
+import { ehRepoDaDemo } from "../../../scripts/lib.mjs";
+import { hostPermitido } from "./cabecalhos";
+import {
+	listaReconhecida,
+	PLUGINS_OBRIGATORIOS,
+	pluginsInstalados,
+} from "./plugins";
+import type { Resposta, Rodar } from "./rodar";
+import type { Estado, Item, Resultado } from "./tipos";
+import { extrairVersao, versaoAtende } from "./versao";
+
+export type Deps = {
+	rodar: Rodar;
+	node: string; // process.versions.node
+	gitignore: string | null; // conteúdo do .gitignore da pasta; null = não existe
+	host: string | null; // cabeçalho Host do pedido
+	local: boolean; // o servidor foi ligado pelo `npm run dev` da demo
+	producao: boolean;
+	cabecalhos: Record<string, string> | null; // da resposta da própria demo; null = não deu para ler
+};
+
+const GUIAS = "https://ia.diegohacks.com.br/guias";
+const AJUDA = {
+	notebook: `${GUIAS}/preparar-o-computador/preparar-o-notebook`,
+	claude: `${GUIAS}/preparar-o-computador/instalar-o-claude-code`,
+	editor: `${GUIAS}/preparar-o-computador/instalar-um-editor`,
+	skills: `${GUIAS}/preparar-o-computador/instalar-as-skills`,
+	seguranca: `${GUIAS}/rodar-local/conferir-o-computador`,
+};
+
+const NODE_MINIMO = 22;
+
+const DEMOROU = "O comando demorou demais para responder.";
+const ESTRANHO = "Respondeu de um jeito que eu não esperava.";
+const SEM_GIT = "Precisa do Git funcionando primeiro.";
+
+type Base = Pick<Item, "id" | "grupo" | "titulo" | "conta" | "ajuda">;
+const item = (base: Base, estado: Estado, detalhe: string): Item => ({
+	...base,
+	estado,
+	detalhe,
+});
+
+// Um rodar que lança (não deveria) vira "não consegui conferir", nunca uma exceção.
+async function seguro(
+	rodar: Rodar,
+	cmd: Parameters<Rodar>[0],
+	args: readonly string[],
+): Promise<Resposta> {
+	try {
+		const r = await rodar(cmd, args);
+		return {
+			ok: r.ok === true,
+			saida: String(r.saida ?? ""),
+			demorou: r.demorou,
+		};
+	} catch {
+		return { ok: false, saida: "", demorou: true };
+	}
+}
+
+// Ferramenta conferida por `<cmd> --version`: só a versão extraída vai para a tela.
+function ferramenta(base: Base, r: Resposta, naoAchei: string): Item {
+	if (r.demorou) return item(base, "nao-conferi", DEMOROU);
+	if (!r.ok) return item(base, "falta", naoAchei);
+	const versao = extrairVersao(r.saida);
+	return versao
+		? item(base, "ok", `Versão ${versao}.`)
+		: item(base, "nao-conferi", ESTRANHO);
+}
+
+// Simula o .gitignore para o arquivo ".env" na raiz: a última regra que casa decide.
+function cobreEnv(gitignore: string): boolean {
+	let ignorado = false;
+	for (const linhaCrua of gitignore.split(/\r?\n/)) {
+		let regra = linhaCrua.trim();
+		if (regra === "" || regra.startsWith("#")) continue;
+		const nega = regra.startsWith("!");
+		if (nega) regra = regra.slice(1);
+		if (regra.endsWith("/")) continue; // só vale para pasta; .env é arquivo
+		if (regra.startsWith("/")) regra = regra.slice(1);
+		const fonte = regra
+			.split("")
+			.map((c) =>
+				c === "*"
+					? "[^/]*"
+					: c === "?"
+						? "[^/]"
+						: c.replace(/[.+^${}()|[\]\\]/g, "\\$&"),
+			)
+			.join("");
+		if (new RegExp(`^${fonte}$`).test(".env")) ignorado = !nega;
+	}
+	return ignorado;
+}
+
+const CABECALHOS_EXIGIDOS: {
+	nome: string;
+	vale: (valor: string) => boolean;
+}[] = [
+	{ nome: "Content-Security-Policy", vale: (v) => v.trim() !== "" },
+	{ nome: "X-Content-Type-Options", vale: (v) => /^nosniff$/i.test(v.trim()) },
+	{ nome: "Referrer-Policy", vale: (v) => v.trim() !== "" },
+	{
+		nome: "X-Frame-Options",
+		vale: (v) => /^(deny|sameorigin)$/i.test(v.trim()),
+	},
+];
+
+function itemCabecalhos(cabecalhos: Record<string, string> | null): Item {
+	const base: Base = {
+		id: "cabecalhos",
+		grupo: "seguranca",
+		titulo: "Cabeçalhos de proteção",
+		conta: true,
+		ajuda: AJUDA.seguranca,
+	};
+	if (cabecalhos === null) {
+		return item(base, "nao-conferi", "Não consegui ler a resposta da página.");
+	}
+	const recebidos = new Map(
+		Object.entries(cabecalhos).map(([k, v]) => [k.toLowerCase(), String(v)]),
+	);
+	const faltando = CABECALHOS_EXIGIDOS.filter((c) => {
+		const valor = recebidos.get(c.nome.toLowerCase());
+		return valor === undefined || !c.vale(valor);
+	}).map((c) => c.nome);
+	return faltando.length === 0
+		? item(base, "ok", "A página chega com as quatro proteções.")
+		: item(base, "falta", `Faltou: ${faltando.join(", ")}.`);
+}
+
+export async function verificar(deps: Deps): Promise<Resultado> {
+	const cabecalhos = itemCabecalhos(deps.cabecalhos);
+
+	// Em produção a demo não confere o computador: um servidor não sai contando o que tem.
+	if (deps.producao) {
+		return {
+			itens: [cabecalhos],
+			pronto: cabecalhos.estado === "ok",
+			producao: true,
+		};
+	}
+
+	// Os rápidos juntos; os dois do Claude depois, um de cada vez. No Windows, abrir o
+	// executável do Claude Code trava o Node por segundos, e com tudo junto os outros
+	// comandos pareceriam demorados sem estar.
+	const [git, nome, origin, code] = await Promise.all([
+		seguro(deps.rodar, "git", ["--version"]),
+		seguro(deps.rodar, "git", ["config", "user.name"]),
+		seguro(deps.rodar, "git", ["remote", "get-url", "origin"]),
+		seguro(deps.rodar, "code", ["--version"]),
+	]);
+	const claude = await seguro(deps.rodar, "claude", ["--version"]);
+	// Sem Claude Code não há lista de plugins para pedir.
+	const plugins: Resposta = claude.ok
+		? await seguro(deps.rodar, "claude", ["plugin", "list"])
+		: { ok: false, saida: "" };
+
+	const itens: Item[] = [];
+
+	// Ferramentas
+	const baseNode: Base = {
+		id: "node",
+		grupo: "ferramentas",
+		titulo: "Node.js",
+		conta: true,
+		ajuda: AJUDA.notebook,
+	};
+	const versaoNode = extrairVersao(deps.node);
+	itens.push(
+		versaoNode === null
+			? item(baseNode, "nao-conferi", ESTRANHO)
+			: versaoAtende(versaoNode, NODE_MINIMO)
+				? item(baseNode, "ok", `Versão ${versaoNode}.`)
+				: item(
+						baseNode,
+						"falta",
+						`Versão ${versaoNode}. Precisa da ${NODE_MINIMO} ou mais nova.`,
+					),
+	);
+
+	const itemGit = ferramenta(
+		{
+			id: "git",
+			grupo: "ferramentas",
+			titulo: "Git",
+			conta: true,
+			ajuda: AJUDA.notebook,
+		},
+		git,
+		"Não encontrei o Git neste computador.",
+	);
+	itens.push(itemGit);
+	const gitOk = itemGit.estado === "ok";
+
+	const baseIdentidade: Base = {
+		id: "git-identidade",
+		grupo: "ferramentas",
+		titulo: "Git sabe quem é você",
+		conta: false,
+		ajuda: AJUDA.notebook,
+	};
+	// O nome nunca vai para a tela: só se ele existe.
+	itens.push(
+		!gitOk
+			? item(baseIdentidade, "nao-conferi", SEM_GIT)
+			: nome.demorou
+				? item(baseIdentidade, "nao-conferi", DEMOROU)
+				: nome.ok && nome.saida.trim() !== ""
+					? item(baseIdentidade, "ok", "O Git já sabe o seu nome.")
+					: item(
+							baseIdentidade,
+							"aviso",
+							"O Git ainda não sabe o seu nome. Ele vai pedir na hora do primeiro commit.",
+						),
+	);
+
+	const itemClaude = ferramenta(
+		{
+			id: "claude",
+			grupo: "ferramentas",
+			titulo: "Claude Code",
+			conta: true,
+			ajuda: AJUDA.claude,
+		},
+		claude,
+		"Não encontrei o Claude Code neste computador.",
+	);
+	itens.push(itemClaude);
+
+	itens.push(
+		ferramenta(
+			{
+				id: "editor",
+				grupo: "ferramentas",
+				titulo: "Editor (VS Code)",
+				conta: false,
+				ajuda: AJUDA.editor,
+			},
+			code,
+			"Não encontrei o VS Code. Ele é opcional.",
+		),
+	);
+
+	// Skills
+	let estadoLista: { estado: Estado; detalhe: string } | null = null;
+	if (itemClaude.estado === "falta") {
+		estadoLista = {
+			estado: "falta",
+			detalhe: "Precisa do Claude Code primeiro.",
+		};
+	} else if (itemClaude.estado !== "ok" || plugins.demorou) {
+		estadoLista = {
+			estado: "nao-conferi",
+			detalhe: plugins.demorou
+				? DEMOROU
+				: "Precisa do Claude Code funcionando primeiro.",
+		};
+	} else if (!plugins.ok || !listaReconhecida(plugins.saida)) {
+		estadoLista = {
+			estado: "nao-conferi",
+			detalhe: "Não consegui ler a lista de plugins.",
+		};
+	}
+	const instalados = new Set(
+		estadoLista ? [] : pluginsInstalados(plugins.saida),
+	);
+	for (const plugin of PLUGINS_OBRIGATORIOS) {
+		const base: Base = {
+			id: `skill-${plugin}`,
+			grupo: "skills",
+			titulo: plugin,
+			conta: true,
+			ajuda: AJUDA.skills,
+		};
+		itens.push(
+			estadoLista
+				? item(base, estadoLista.estado, estadoLista.detalhe)
+				: instalados.has(plugin)
+					? item(base, "ok", "Instalada.")
+					: item(base, "falta", "Não está instalada."),
+		);
+	}
+
+	// Segurança
+	itens.push(cabecalhos);
+
+	const baseLocal: Base = {
+		id: "so-local",
+		grupo: "seguranca",
+		titulo: "Só o seu computador enxerga",
+		conta: true,
+		ajuda: AJUDA.seguranca,
+	};
+	itens.push(
+		!deps.local
+			? item(
+					baseLocal,
+					"falta",
+					"O servidor não foi ligado pelo npm run dev desta pasta.",
+				)
+			: !hostPermitido(deps.host)
+				? item(baseLocal, "falta", "O pedido não veio deste computador.")
+				: item(baseLocal, "ok", "O servidor só responde no seu computador."),
+	);
+
+	const baseSegredos: Base = {
+		id: "segredos",
+		grupo: "seguranca",
+		titulo: "Segredos fora do Git",
+		conta: true,
+		ajuda: AJUDA.seguranca,
+	};
+	itens.push(
+		deps.gitignore === null
+			? item(
+					baseSegredos,
+					"falta",
+					"Não achei o arquivo .gitignore nesta pasta.",
+				)
+			: cobreEnv(deps.gitignore)
+				? item(baseSegredos, "ok", "O .gitignore deixa o .env fora do Git.")
+				: item(baseSegredos, "falta", "O .gitignore não cobre o .env."),
+	);
+
+	const basePasta: Base = {
+		id: "pasta-sua",
+		grupo: "seguranca",
+		titulo: "Pasta é sua",
+		conta: false,
+		ajuda: AJUDA.seguranca,
+	};
+	// Sem origin o git sai com erro: é o caso normal depois do `npm run comecar`.
+	itens.push(
+		!gitOk
+			? item(basePasta, "nao-conferi", SEM_GIT)
+			: origin.demorou
+				? item(basePasta, "nao-conferi", DEMOROU)
+				: origin.ok && ehRepoDaDemo(origin.saida)
+					? item(
+							basePasta,
+							"aviso",
+							"Ainda aponta para o repositório do DiegoHacks. Rode npm run comecar.",
+						)
+					: item(basePasta, "ok", "A pasta é só sua."),
+	);
+
+	return {
+		itens,
+		pronto: itens.filter((i) => i.conta).every((i) => i.estado === "ok"),
+		producao: false,
+	};
+}
+
+export function frase(r: Resultado): {
+	titulo: string;
+	texto: string;
+	pose: "comemorando" | "pensando";
+} {
+	// Mesma regra do "pronto": só contam os itens com conta: true.
+	const faltam = r.itens.filter((i) => i.conta && i.estado !== "ok").length;
+	if (faltam === 0) {
+		return {
+			pose: "comemorando",
+			titulo: "Seu computador está pronto!",
+			texto:
+				"Você instalou as ferramentas e rodou um sistema usando o guia do DiegoHacks. Pode começar a criar.",
+		};
+	}
+	return {
+		pose: "pensando",
+		titulo: "Quase lá.",
+		texto:
+			faltam === 1
+				? "Falta 1 item. Clique nele para ver como resolver."
+				: `Faltam ${faltam} itens. Clique em cada um para ver como resolver.`,
+	};
+}
+
+export type { Estado, Grupo, Item, Resultado } from "./tipos";

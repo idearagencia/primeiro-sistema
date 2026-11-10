@@ -1,0 +1,16 @@
+Installed plugins:
+
+  ❯ code-review@claude-plugins-official
+    Version: 1.0.1
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ security-guidance@claude-plugins-official
+    Version: 2.0.19
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ superpowers@claude-plugins-official
+    Version: 7.0.0
+    Scope: user
+    Status: ✔ enabled
