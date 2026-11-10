@@ -16,8 +16,21 @@ export type Deps = {
 	host: string | null; // cabeçalho Host do pedido
 	local: boolean; // o servidor foi ligado pelo `npm run dev` da demo
 	producao: boolean;
-	cabecalhos: Record<string, string> | null; // da resposta da própria demo; null = não deu para ler
+	// Da resposta da própria demo; null = não deu para ler. Pode chegar como promessa: a leitura
+	// corre junto com os comandos, dentro do mesmo prazo.
+	cabecalhos:
+		| Record<string, string>
+		| null
+		| Promise<Record<string, string> | null>;
+	prazoMs?: number; // prazo total da conferência (padrão PRAZO_MS); os testes usam menos
 };
+
+// A conferência inteira termina dentro deste prazo. O que não respondeu a tempo vira
+// NÃO CONSEGUI CONFERIR ("demorou demais").
+export const PRAZO_MS = 8000;
+const LIMITE_POR_COMANDO_MS = 5000;
+// Abaixo disso nem começa um comando: abrir o do Claude já trava o Node por segundos.
+const MINIMO_PARA_COMECAR_MS = 500;
 
 const GUIAS = "https://ia.diegohacks.com.br/guias";
 const AJUDA = {
@@ -41,27 +54,70 @@ const item = (base: Base, estado: Estado, detalhe: string): Item => ({
 	detalhe,
 });
 
-// Um rodar que lança (não deveria) vira "não consegui conferir", nunca uma exceção.
+// Resposta com um campo a mais: `estranho` = o rodar lançou (não deveria).
+type Lida = Resposta & { estranho?: boolean };
+const ESGOTOU: Lida = { ok: false, saida: "", demorou: true };
+
+// Relógio único da conferência: cada espera disputa com ele.
+function criarPrazo(ms: number) {
+	const fim = Date.now() + ms;
+	let relogio: ReturnType<typeof setTimeout> | undefined;
+	const esgotou = new Promise<typeof ESGOTOU>((resolve) => {
+		relogio = setTimeout(() => resolve(ESGOTOU), ms);
+	});
+	return {
+		resta: () => fim - Date.now(),
+		disputa: <T>(p: Promise<T>) => Promise.race([p, esgotou]),
+		parar: () => clearTimeout(relogio),
+	};
+}
+type Prazo = ReturnType<typeof criarPrazo>;
+
+// Nunca lança e nunca passa do prazo. Um rodar que lança vira "não consegui conferir".
 async function seguro(
 	rodar: Rodar,
+	prazo: Prazo,
 	cmd: Parameters<Rodar>[0],
 	args: readonly string[],
-): Promise<Resposta> {
+): Promise<Lida> {
+	const resta = prazo.resta();
+	if (resta < MINIMO_PARA_COMECAR_MS) return ESGOTOU;
+	const ms = Math.min(LIMITE_POR_COMANDO_MS, resta);
 	try {
-		const r = await rodar(cmd, args);
+		const r = await prazo.disputa(Promise.resolve(rodar(cmd, args, ms)));
 		return {
 			ok: r.ok === true,
 			saida: String(r.saida ?? ""),
 			demorou: r.demorou,
 		};
 	} catch {
-		return { ok: false, saida: "", demorou: true };
+		return { ok: false, saida: "", estranho: true };
+	}
+}
+
+// Item que não deu para conferir porque o comando demorou ou falhou de um jeito estranho.
+function semConferir(base: Base, r: Lida): Item | null {
+	if (r.demorou) return item(base, "nao-conferi", DEMOROU);
+	if (r.estranho) return item(base, "nao-conferi", ESTRANHO);
+	return null;
+}
+
+async function lerCabecalhos(
+	cabecalhos: Deps["cabecalhos"],
+	prazo: Prazo,
+): Promise<Record<string, string> | null> {
+	try {
+		const r = await prazo.disputa(Promise.resolve(cabecalhos));
+		return r === ESGOTOU ? null : (r as Record<string, string> | null);
+	} catch {
+		return null;
 	}
 }
 
 // Ferramenta conferida por `<cmd> --version`: só a versão extraída vai para a tela.
-function ferramenta(base: Base, r: Resposta, naoAchei: string): Item {
-	if (r.demorou) return item(base, "nao-conferi", DEMOROU);
+function ferramenta(base: Base, r: Lida, naoAchei: string): Item {
+	const problema = semConferir(base, r);
+	if (problema) return problema;
 	if (!r.ok) return item(base, "falta", naoAchei);
 	const versao = extrairVersao(r.saida);
 	return versao
@@ -131,10 +187,21 @@ function itemCabecalhos(cabecalhos: Record<string, string> | null): Item {
 }
 
 export async function verificar(deps: Deps): Promise<Resultado> {
-	const cabecalhos = itemCabecalhos(deps.cabecalhos);
+	const prazo = criarPrazo(deps.prazoMs ?? PRAZO_MS);
+	try {
+		return await conferir(deps, prazo);
+	} finally {
+		prazo.parar();
+	}
+}
+
+async function conferir(deps: Deps, prazo: Prazo): Promise<Resultado> {
+	// A leitura dos cabeçalhos corre junto com os comandos.
+	const lendoCabecalhos = lerCabecalhos(deps.cabecalhos, prazo);
 
 	// Em produção a demo não confere o computador: um servidor não sai contando o que tem.
 	if (deps.producao) {
+		const cabecalhos = itemCabecalhos(await lendoCabecalhos);
 		return {
 			itens: [cabecalhos],
 			pronto: cabecalhos.estado === "ok",
@@ -146,16 +213,17 @@ export async function verificar(deps: Deps): Promise<Resultado> {
 	// executável do Claude Code trava o Node por segundos, e com tudo junto os outros
 	// comandos pareceriam demorados sem estar.
 	const [git, nome, origin, code] = await Promise.all([
-		seguro(deps.rodar, "git", ["--version"]),
-		seguro(deps.rodar, "git", ["config", "user.name"]),
-		seguro(deps.rodar, "git", ["remote", "get-url", "origin"]),
-		seguro(deps.rodar, "code", ["--version"]),
+		seguro(deps.rodar, prazo, "git", ["--version"]),
+		seguro(deps.rodar, prazo, "git", ["config", "user.name"]),
+		seguro(deps.rodar, prazo, "git", ["remote", "get-url", "origin"]),
+		seguro(deps.rodar, prazo, "code", ["--version"]),
 	]);
-	const claude = await seguro(deps.rodar, "claude", ["--version"]);
+	const claude = await seguro(deps.rodar, prazo, "claude", ["--version"]);
 	// Sem Claude Code não há lista de plugins para pedir.
-	const plugins: Resposta = claude.ok
-		? await seguro(deps.rodar, "claude", ["plugin", "list"])
+	const plugins: Lida = claude.ok
+		? await seguro(deps.rodar, prazo, "claude", ["plugin", "list"])
 		: { ok: false, saida: "" };
+	const cabecalhos = itemCabecalhos(await lendoCabecalhos);
 
 	const itens: Item[] = [];
 
@@ -205,15 +273,14 @@ export async function verificar(deps: Deps): Promise<Resultado> {
 	itens.push(
 		!gitOk
 			? item(baseIdentidade, "nao-conferi", SEM_GIT)
-			: nome.demorou
-				? item(baseIdentidade, "nao-conferi", DEMOROU)
-				: nome.ok && nome.saida.trim() !== ""
-					? item(baseIdentidade, "ok", "O Git já sabe o seu nome.")
-					: item(
-							baseIdentidade,
-							"aviso",
-							"O Git ainda não sabe o seu nome. Ele vai pedir na hora do primeiro commit.",
-						),
+			: (semConferir(baseIdentidade, nome) ??
+					(nome.ok && nome.saida.trim() !== ""
+						? item(baseIdentidade, "ok", "O Git já sabe o seu nome.")
+						: item(
+								baseIdentidade,
+								"aviso",
+								"O Git ainda não sabe o seu nome. Ele vai pedir na hora do primeiro commit.",
+							))),
 	);
 
 	const itemClaude = ferramenta(
@@ -335,15 +402,14 @@ export async function verificar(deps: Deps): Promise<Resultado> {
 	itens.push(
 		!gitOk
 			? item(basePasta, "nao-conferi", SEM_GIT)
-			: origin.demorou
-				? item(basePasta, "nao-conferi", DEMOROU)
-				: origin.ok && ehRepoDaDemo(origin.saida)
-					? item(
-							basePasta,
-							"aviso",
-							"Ainda aponta para o repositório do DiegoHacks. Rode npm run comecar.",
-						)
-					: item(basePasta, "ok", "A pasta é só sua."),
+			: (semConferir(basePasta, origin) ??
+					(origin.ok && ehRepoDaDemo(origin.saida)
+						? item(
+								basePasta,
+								"aviso",
+								"Ainda aponta para o repositório do DiegoHacks. Rode npm run comecar.",
+							)
+						: item(basePasta, "ok", "A pasta é só sua."))),
 	);
 
 	return {

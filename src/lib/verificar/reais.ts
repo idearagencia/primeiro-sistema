@@ -5,31 +5,42 @@ import type { Deps } from "./index";
 import { type Resposta, type Rodar, rodar } from "./rodar";
 
 const DEZ_SEGUNDOS = 10_000;
+const GUARDADOS = new Set(["claude --version", "claude plugin list"]);
 
-// `claude plugin list` é o comando mais lento: guarda a última resposta boa por 10 s para a
-// página não demorar a cada recarga. Os outros comandos rodam sempre.
-export function comCacheDosPlugins(
+// Os dois comandos do Claude são os lentos (só abrir o executável já leva segundos no
+// Windows): guarda a última resposta boa de cada um por 10 s para a página não demorar a cada
+// recarga. Dois pedidos ao mesmo tempo esperam o mesmo processo, em vez de abrir dois.
+// Os outros comandos rodam sempre.
+export function comCacheDoClaude(
 	rodarDeVerdade: Rodar,
 	agora: () => number = Date.now,
 ): Rodar {
-	let guardada: { em: number; resposta: Resposta } | null = null;
-	return async (cmd, args, ms) => {
-		const ehLista =
-			cmd === "claude" &&
-			args.length === 2 &&
-			args[0] === "plugin" &&
-			args[1] === "list";
-		if (!ehLista) return rodarDeVerdade(cmd, args, ms);
+	const guardadas = new Map<string, { em: number; resposta: Resposta }>();
+	const emAndamento = new Map<string, Promise<Resposta>>();
+	return (cmd, args, ms) => {
+		const chave = [cmd, ...args].join(" ");
+		if (!GUARDADOS.has(chave)) return rodarDeVerdade(cmd, args, ms);
+		const guardada = guardadas.get(chave);
 		if (guardada && agora() - guardada.em < DEZ_SEGUNDOS) {
-			return guardada.resposta;
+			return Promise.resolve(guardada.resposta);
 		}
-		const resposta = await rodarDeVerdade(cmd, args, ms);
-		if (resposta.ok) guardada = { em: agora(), resposta };
-		return resposta;
+		const andando = emAndamento.get(chave);
+		if (andando) return andando;
+		const pedido = (async () => {
+			try {
+				const resposta = await rodarDeVerdade(cmd, args, ms);
+				if (resposta.ok) guardadas.set(chave, { em: agora(), resposta });
+				return resposta;
+			} finally {
+				emAndamento.delete(chave);
+			}
+		})();
+		emAndamento.set(chave, pedido);
+		return pedido;
 	};
 }
 
-const rodarComCache = comCacheDosPlugins(rodar);
+const rodarComCache = comCacheDoClaude(rodar);
 
 async function lerGitignore(): Promise<string | null> {
 	try {
@@ -63,18 +74,15 @@ async function lerCabecalhos(
 }
 
 // As dependências de verdade, usadas pela página e pela rota /api/conferir.
+// Os cabeçalhos vão como promessa: o verificar lê junto com os comandos, dentro do prazo.
 export async function depsReais(host: string | null): Promise<Deps> {
-	const [gitignore, cabecalhos] = await Promise.all([
-		lerGitignore(),
-		lerCabecalhos(host),
-	]);
 	return {
 		rodar: rodarComCache,
 		node: process.versions.node,
-		gitignore,
+		gitignore: await lerGitignore(),
 		host,
 		local: process.env.PRIMEIRO_SISTEMA_LOCAL === "1",
 		producao: process.env.NODE_ENV === "production",
-		cabecalhos,
+		cabecalhos: lerCabecalhos(host),
 	};
 }

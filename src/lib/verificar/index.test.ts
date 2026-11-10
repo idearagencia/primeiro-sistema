@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { CABECALHOS } from "./cabecalhos";
-import { type Deps, frase, verificar } from "./index";
+import { type Deps, frase, PRAZO_MS, verificar } from "./index";
 import type { Rodar } from "./rodar";
 import type { Item, Resultado } from "./tipos";
 
@@ -253,6 +253,119 @@ describe("verificar", () => {
 		expect(estado(r, "claude")).toBe("nao-conferi");
 		expect(r.pronto).toBe(false);
 		expect(JSON.stringify(r)).not.toMatch(/José|Users|boom/);
+		// Lançar não é demorar: a tela não pode dizer que o comando demorou.
+		const git = r.itens.find((i) => i.id === "git") as Item;
+		expect(git.detalhe).toBe("Respondeu de um jeito que eu não esperava.");
+		expect(JSON.stringify(r)).not.toContain("demorou");
+	});
+
+	it("rodar que lança só no git config e no remote → não consegui conferir, sem 'demorou'", async () => {
+		const base = falso(RESPOSTAS);
+		const quebraAlguns: Rodar = async (cmd, args) => {
+			if (cmd === "git" && args[0] !== "--version") throw new Error("x");
+			return base(cmd, args);
+		};
+		const r = await verificar({ ...tudoCerto, rodar: quebraAlguns });
+		for (const id of ["git-identidade", "pasta-sua"]) {
+			const i = r.itens.find((x) => x.id === id) as Item;
+			expect(i.estado).toBe("nao-conferi");
+			expect(i.detalhe).not.toContain("demorou");
+		}
+	});
+
+	it("o prazo padrão da conferência é 8 s", () => {
+		expect(PRAZO_MS).toBe(8000);
+	});
+
+	it("comandos que nunca respondem: termina dentro do prazo, tudo sem conferir", async () => {
+		const pedidos: (number | undefined)[] = [];
+		const nuncaResponde: Rodar = (_cmd, _args, ms) => {
+			pedidos.push(ms);
+			return new Promise(() => {});
+		};
+		const t = Date.now();
+		const r = await verificar({
+			...tudoCerto,
+			rodar: nuncaResponde,
+			cabecalhos: new Promise(() => {}),
+			prazoMs: 800,
+		});
+		const passou = Date.now() - t;
+		expect(passou).toBeGreaterThanOrEqual(700);
+		expect(passou).toBeLessThan(1500);
+		expect(r.itens.map((i) => i.id)).toEqual(IDS);
+		for (const id of ["git", "claude", "editor"]) {
+			const i = r.itens.find((x) => x.id === id) as Item;
+			expect(i.estado).toBe("nao-conferi");
+			expect(i.detalhe).toBe("O comando demorou demais para responder.");
+		}
+		for (const id of ["git-identidade", "pasta-sua", ...SKILLS]) {
+			expect(estado(r, id)).toBe("nao-conferi");
+		}
+		expect(estado(r, "cabecalhos")).toBe("nao-conferi");
+		expect(r.pronto).toBe(false);
+		// Cada comando recebe no máximo o que sobra do prazo.
+		for (const ms of pedidos) expect(ms).toBeLessThanOrEqual(800);
+	});
+
+	it("o último comando só recebe o que sobra do prazo", async () => {
+		const base = falso(RESPOSTAS);
+		let msDaLista: number | undefined;
+		const t = Date.now();
+		const r = await verificar({
+			...tudoCerto,
+			rodar: async (cmd, args, ms) => {
+				if (cmd === "claude" && args[0] === "--version") {
+					await new Promise((ok) => setTimeout(ok, 300));
+				}
+				if (cmd === "claude" && args[0] === "plugin") {
+					// rodar falso que respeita o ms recebido e estoura
+					msDaLista = ms;
+					await new Promise((ok) => setTimeout(ok, ms));
+					return { ok: false, saida: "", demorou: true };
+				}
+				return base(cmd, args);
+			},
+			prazoMs: 1000,
+		});
+		expect(Date.now() - t).toBeLessThan(1500);
+		expect(msDaLista).toBeLessThanOrEqual(700);
+		expect(estado(r, "claude")).toBe("ok");
+		expect(estado(r, "git")).toBe("ok");
+		for (const id of SKILLS) expect(estado(r, id)).toBe("nao-conferi");
+	});
+
+	it("prazo quase no fim: nem começa um comando", async () => {
+		const espiao = vi.fn<Rodar>(falso(RESPOSTAS));
+		const r = await verificar({ ...tudoCerto, rodar: espiao, prazoMs: 100 });
+		expect(espiao).not.toHaveBeenCalled();
+		expect(estado(r, "git")).toBe("nao-conferi");
+		expect(estado(r, "node")).toBe("ok");
+	});
+
+	it("cabeçalhos podem chegar como promessa", async () => {
+		const r = await verificar({
+			...tudoCerto,
+			cabecalhos: Promise.resolve({ ...CABECALHOS }),
+		});
+		expect(estado(r, "cabecalhos")).toBe("ok");
+		const falhou = await verificar({
+			...tudoCerto,
+			cabecalhos: Promise.reject(new Error("x")),
+		});
+		expect(estado(falhou, "cabecalhos")).toBe("nao-conferi");
+	});
+
+	it("em produção os cabeçalhos também têm prazo", async () => {
+		const t = Date.now();
+		const r = await verificar({
+			...tudoCerto,
+			producao: true,
+			cabecalhos: new Promise(() => {}),
+			prazoMs: 300,
+		});
+		expect(Date.now() - t).toBeLessThan(1000);
+		expect(estado(r, "cabecalhos")).toBe("nao-conferi");
 	});
 
 	it("os dois comandos do Claude rodam por último, um de cada vez", async () => {
