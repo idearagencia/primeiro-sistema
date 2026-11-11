@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ehRepoDaDemo } from "./lib.mjs";
+import { ehRepoDaDemo, linhaDoItem } from "./lib.mjs";
 
 describe("ehRepoDaDemo", () => {
 	it.each([
@@ -26,5 +26,81 @@ describe("ehRepoDaDemo", () => {
 	it("aceita qualquer coisa sem lançar", () => {
 		expect(ehRepoDaDemo(undefined)).toBe(false);
 		expect(ehRepoDaDemo(null)).toBe(false);
+	});
+});
+
+describe("linhaDoItem", () => {
+	it("OK mostra título e versão", () => {
+		expect(
+			linhaDoItem({
+				estado: "ok",
+				titulo: "Git",
+				detalhe: "2.47.1",
+				ajuda: "x",
+			}),
+		).toBe("[OK] Git 2.47.1");
+	});
+
+	it("OK com o detalhe que o verificador escreve", () => {
+		expect(
+			linhaDoItem({
+				estado: "ok",
+				titulo: "Git",
+				detalhe: "Versão 2.47.1.",
+				ajuda: "x",
+			}),
+		).toBe("[OK] Git 2.47.1");
+		expect(
+			linhaDoItem({
+				estado: "ok",
+				titulo: "superpowers",
+				detalhe: "Instalada.",
+				ajuda: "x",
+			}),
+		).toBe("[OK] superpowers: Instalada");
+	});
+
+	it("FALTA diz como resolver", () => {
+		expect(
+			linhaDoItem({
+				estado: "falta",
+				titulo: "Claude Code",
+				detalhe: "não encontrei",
+				ajuda: "https://a/b",
+			}),
+		).toBe("[FALTA] Claude Code: não encontrei. Como resolver: https://a/b");
+	});
+
+	it("não repete o ponto final do detalhe", () => {
+		expect(
+			linhaDoItem({
+				estado: "falta",
+				titulo: "Git",
+				detalhe: "Não encontrei o Git.",
+				ajuda: "https://a/b",
+			}),
+		).toBe("[FALTA] Git: Não encontrei o Git. Como resolver: https://a/b");
+	});
+
+	it("NÃO CONSEGUI CONFERIR vira [?]", () => {
+		expect(
+			linhaDoItem({
+				estado: "nao-conferi",
+				titulo: "Skills",
+				detalhe: "não consegui conferir",
+				ajuda: "https://a/b",
+			}),
+		).toMatch(/^\[\?\] Skills/);
+	});
+
+	it("ATENÇÃO vira [!]", () => {
+		expect(
+			linhaDoItem({
+				estado: "aviso",
+				titulo: "Pasta é sua",
+				detalhe: "Rode npm run comecar.",
+				ajuda: "https://a/b",
+			}),
+		).toBe("[!] Pasta é sua: Rode npm run comecar. Como resolver: https://a/b");
 	});
 });

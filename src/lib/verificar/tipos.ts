@@ -16,3 +16,13 @@ export type Item = {
 };
 
 export type Resultado = { itens: Item[]; pronto: boolean; producao: boolean };
+
+// A frase do topo da tela e a pose do mascote que vai com ela.
+export type Frase = {
+	titulo: string;
+	texto: string;
+	pose: "comemorando" | "pensando";
+};
+
+// O que a rota /api/conferir devolve: o resultado e a frase do topo, já calculada.
+export type Conferencia = Resultado & { frase: Frase };

@@ -1,24 +1,295 @@
 @import "tailwindcss";
 
+/* Identidade do DiegoHacks: fundo grafite, luz verde-limão da área de IA, pixel art. */
 :root {
-	--background: #ffffff;
-	--foreground: #171717;
+	--fundo: #141414;
+	--chapa: #1c1c1c;
+	--linha: #2e2e2e;
+	--tinta: #ededed;
+	--tinta-baixa: #a9a9a9;
+	--luz: #c6ff3d;
+	--falta: #ff7b5c;
+	--atencao: #ffc94a;
+	--duvida: #a5c4ff;
+	--conferindo: #8c8c8c;
+	--pixel: var(--fonte-pixel), ui-monospace, "Courier New", monospace;
+	color-scheme: dark;
 }
 
-@theme inline {
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-}
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		--background: #0a0a0a;
-		--foreground: #ededed;
-	}
+html {
+	background: var(--fundo);
+	-webkit-text-size-adjust: 100%;
 }
 
 body {
-	background: var(--background);
-	color: var(--foreground);
+	margin: 0;
+	min-height: 100vh;
+	background: var(--fundo);
+	color: var(--tinta);
 	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 1rem;
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: var(--luz);
+	text-underline-offset: 0.2em;
+}
+
+a:focus-visible {
+	outline: 2px solid var(--luz);
+	outline-offset: 3px;
+	border-radius: 2px;
+}
+
+.pagina {
+	max-width: 44rem;
+	margin: 0 auto;
+	padding: 2.5rem 1rem 3rem;
+}
+
+/* Topo: o mascote em pé numa linha de chão, a frase ao lado. */
+.topo {
+	display: grid;
+	grid-template-columns: 7.5rem 1fr;
+	gap: 1.5rem;
+	align-items: end;
+	padding-bottom: 1.25rem;
+	border-bottom: 4px solid var(--luz);
+	box-shadow: 0 4px 0 0 #0a0a0a;
+}
+
+.mascote {
+	display: block;
+	width: 100%;
+	height: auto;
+	image-rendering: pixelated;
+}
+
+.nome-do-sistema {
+	margin: 0 0 0.25rem;
+	font-family: var(--pixel);
+	font-size: 1.25rem;
+	line-height: 1;
+	color: var(--tinta-baixa);
+}
+
+.frase h1 {
+	margin: 0 0 0.5rem;
+	font-family: var(--pixel);
+	font-weight: 400;
+	font-size: 3rem;
+	line-height: 0.95;
+	letter-spacing: 0.01em;
+	color: var(--tinta);
+}
+
+.topo[data-pronto="sim"] .frase h1 {
+	color: var(--luz);
+}
+
+.frase p {
+	margin: 0;
+	max-width: 34rem;
+	color: var(--tinta);
+}
+
+/* Barra de blocos: um bloco por item que conta para o "pronto". */
+.barra {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem;
+	margin-top: 1rem;
+}
+
+.blocos {
+	display: flex;
+	gap: 3px;
+}
+
+.bloco {
+	width: 0.75rem;
+	height: 0.75rem;
+	background: var(--linha);
+}
+
+.bloco[data-ok="sim"] {
+	background: var(--luz);
+}
+
+.barra-texto {
+	font-family: var(--pixel);
+	font-size: 1.25rem;
+	line-height: 1;
+	color: var(--tinta-baixa);
+}
+
+/* Grupos e itens */
+.grupo {
+	margin-top: 2.25rem;
+}
+
+.grupo-topo {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 1rem;
+	margin-bottom: 0.5rem;
+}
+
+.grupo h2 {
+	margin: 0;
+	font-family: var(--pixel);
+	font-weight: 400;
+	font-size: 2rem;
+	line-height: 1;
+}
+
+.grupo-conta {
+	font-family: var(--pixel);
+	font-size: 1.25rem;
+	line-height: 1;
+	color: var(--tinta-baixa);
+}
+
+.itens {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	border-top: 1px solid var(--linha);
+}
+
+.item {
+	display: grid;
+	grid-template-columns: 8.5rem 1fr;
+	gap: 1rem;
+	padding: 0.9rem 0;
+	border-bottom: 1px solid var(--linha);
+}
+
+.selo {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+	font-family: var(--pixel);
+	font-size: 1.25rem;
+	line-height: 1.05;
+	color: var(--cor);
+}
+
+.selo svg {
+	flex: none;
+	width: 1.05rem;
+	height: 1.05rem;
+	margin-top: 0.05rem;
+	shape-rendering: crispEdges;
+}
+
+.item[data-estado="ok"] {
+	--cor: var(--luz);
+}
+.item[data-estado="falta"] {
+	--cor: var(--falta);
+}
+.item[data-estado="aviso"] {
+	--cor: var(--atencao);
+}
+.item[data-estado="nao-conferi"] {
+	--cor: var(--duvida);
+}
+.item[data-estado="conferindo"] {
+	--cor: var(--conferindo);
+}
+
+.corpo h3 {
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 650;
+	line-height: 1.35;
+}
+
+.descricao {
+	margin: 0.1rem 0 0;
+	color: var(--tinta-baixa);
+	font-size: 0.9375rem;
+}
+
+.detalhe {
+	margin: 0.35rem 0 0;
+	font-size: 0.9375rem;
+}
+
+.item[data-estado="conferindo"] .detalhe {
+	color: var(--conferindo);
+}
+
+.resolver {
+	display: inline-block;
+	margin-top: 0.35rem;
+	font-weight: 600;
+	font-size: 0.9375rem;
+}
+
+.nota {
+	margin: 0.9rem 0 0;
+	color: var(--tinta-baixa);
+	font-size: 0.9375rem;
+}
+
+.nota strong {
+	color: var(--tinta);
+}
+
+.proximo {
+	margin-top: 3rem;
+	padding: 1.25rem;
+	background: var(--chapa);
+	border-left: 4px solid var(--luz);
+}
+
+.proximo h2 {
+	margin: 0 0 0.25rem;
+	font-family: var(--pixel);
+	font-weight: 400;
+	font-size: 1.75rem;
+	line-height: 1;
+}
+
+.proximo p {
+	margin: 0;
+}
+
+/* Enquanto confere, o ícone pisca devagar. Com "menos movimento", nada anima. */
+@media (prefers-reduced-motion: no-preference) {
+	.item[data-estado="conferindo"] .selo svg {
+		animation: piscar 1.2s steps(2, jump-none) infinite;
+	}
+}
+
+@keyframes piscar {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0.3;
+	}
+}
+
+@media (max-width: 34rem) {
+	.pagina {
+		padding-top: 1.5rem;
+	}
+	.topo {
+		grid-template-columns: 5rem 1fr;
+		gap: 1rem;
+	}
+	.frase h1 {
+		font-size: 2.25rem;
+	}
+	.item {
+		grid-template-columns: 1fr;
+		gap: 0.35rem;
+	}
 }

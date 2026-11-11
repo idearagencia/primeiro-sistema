@@ -149,6 +149,10 @@ describe("verificar", () => {
 			expect(estado(r, id)).toBe("falta");
 		}
 		expect(r.pronto).toBe(false);
+		// No Windows, o instalado pelo npm (claude.cmd) também cai aqui: o texto manda ao oficial.
+		expect(r.itens.find((i) => i.id === "claude")?.detalhe).toMatch(
+			/comando oficial/,
+		);
 	});
 
 	it("claude existe mas a lista de plugins falhou: skills sem conferir, não pronto", async () => {

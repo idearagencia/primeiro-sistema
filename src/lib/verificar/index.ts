@@ -6,7 +6,7 @@ import {
 	pluginsInstalados,
 } from "./plugins";
 import type { Resposta, Rodar } from "./rodar";
-import type { Estado, Item, Resultado } from "./tipos";
+import type { Estado, Frase, Item, Resultado } from "./tipos";
 import { extrairVersao, versaoAtende } from "./versao";
 
 export type Deps = {
@@ -292,7 +292,7 @@ async function conferir(deps: Deps, prazo: Prazo): Promise<Resultado> {
 			ajuda: AJUDA.claude,
 		},
 		claude,
-		"Não encontrei o Claude Code neste computador.",
+		"Não encontrei o Claude Code neste computador. Instale pelo comando oficial, como mostra o guia (o instalado pelo npm não serve aqui).",
 	);
 	itens.push(itemClaude);
 
@@ -419,11 +419,7 @@ async function conferir(deps: Deps, prazo: Prazo): Promise<Resultado> {
 	};
 }
 
-export function frase(r: Resultado): {
-	titulo: string;
-	texto: string;
-	pose: "comemorando" | "pensando";
-} {
+export function frase(r: Resultado): Frase {
 	// Mesma regra do "pronto": só contam os itens com conta: true.
 	const faltam = r.itens.filter((i) => i.conta && i.estado !== "ok").length;
 	if (faltam === 0) {
@@ -444,4 +440,11 @@ export function frase(r: Resultado): {
 	};
 }
 
-export type { Estado, Grupo, Item, Resultado } from "./tipos";
+export type {
+	Conferencia,
+	Estado,
+	Frase,
+	Grupo,
+	Item,
+	Resultado,
+} from "./tipos";
