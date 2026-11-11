@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { verificar } from "@/lib/verificar";
 import { CABECALHOS } from "@/lib/verificar/cabecalhos";
-import { ITENS_DA_TELA } from "./Verificador";
+import type { Conferencia, Item } from "@/lib/verificar/tipos";
+import { conferirComNovaTentativa, ITENS_DA_TELA } from "./Verificador";
 
 describe("ITENS_DA_TELA", () => {
 	it("tem os mesmos itens, títulos, grupos e ordem do verificador", async () => {
@@ -24,5 +25,69 @@ describe("ITENS_DA_TELA", () => {
 			expect(i.descricao.length).toBeGreaterThan(10);
 			expect(i.descricao.length).toBeLessThan(110);
 		}
+	});
+});
+
+describe("conferirComNovaTentativa", () => {
+	const item = (estado: Item["estado"]): Item => ({
+		id: "skill-superpowers",
+		grupo: "skills",
+		titulo: "superpowers",
+		estado,
+		detalhe: "",
+		conta: true,
+		ajuda: "https://a/b",
+	});
+	const conferencia = (estado: Item["estado"]): Conferencia => ({
+		itens: [item("ok"), item(estado)],
+		pronto: estado === "ok",
+		producao: false,
+		frase: { titulo: "", texto: "", pose: "pensando" },
+	});
+
+	it("tudo conferido: pergunta uma vez só", async () => {
+		const buscar = vi.fn(async () => conferencia("ok"));
+		const aoParcial = vi.fn();
+		const r = await conferirComNovaTentativa(buscar, aoParcial);
+		expect(buscar).toHaveBeenCalledTimes(1);
+		expect(aoParcial).not.toHaveBeenCalled();
+		expect(r.pronto).toBe(true);
+	});
+
+	it("algum item sem conferir: mostra o parcial e pergunta de novo", async () => {
+		const primeira = conferencia("nao-conferi");
+		const buscar = vi
+			.fn<() => Promise<Conferencia>>()
+			.mockResolvedValueOnce(primeira)
+			.mockResolvedValueOnce(conferencia("ok"));
+		const aoParcial = vi.fn();
+		const r = await conferirComNovaTentativa(buscar, aoParcial);
+		expect(buscar).toHaveBeenCalledTimes(2);
+		expect(aoParcial).toHaveBeenCalledWith(primeira);
+		expect(r.pronto).toBe(true);
+	});
+
+	it("pergunta de novo uma vez só, mesmo que continue sem conferir", async () => {
+		const buscar = vi.fn(async () => conferencia("nao-conferi"));
+		const r = await conferirComNovaTentativa(buscar, () => {});
+		expect(buscar).toHaveBeenCalledTimes(2);
+		expect(r.itens[1].estado).toBe("nao-conferi");
+	});
+
+	it("a segunda pergunta falhou: fica valendo a primeira", async () => {
+		const primeira = conferencia("nao-conferi");
+		const buscar = vi
+			.fn<() => Promise<Conferencia>>()
+			.mockResolvedValueOnce(primeira)
+			.mockRejectedValueOnce(new Error("caiu"));
+		expect(await conferirComNovaTentativa(buscar, () => {})).toBe(primeira);
+	});
+
+	it("a primeira pergunta falhou: o erro sobe (a tela mostra o aviso)", async () => {
+		const buscar = vi.fn(async (): Promise<Conferencia> => {
+			throw new Error("caiu");
+		});
+		await expect(conferirComNovaTentativa(buscar, () => {})).rejects.toThrow();
+		expect(buscar).toHaveBeenCalledTimes(1);
 	});
 });

@@ -2,7 +2,7 @@
 // que a tela. Sai com 0 se está tudo pronto, 1 se falta algo e 2 se o servidor está desligado.
 // Usa process.exitCode em vez de process.exit(): no Windows, sair à força logo depois de um
 // fetch derruba o Node com um erro interno.
-import { linhaDoItem } from "./lib.mjs";
+import { ehConferencia, linhaDoItem } from "./lib.mjs";
 
 const porta = process.env.PORT || "3000";
 const endereco = `http://127.0.0.1:${porta}/api/conferir`;
@@ -42,7 +42,21 @@ async function conferir() {
 		return 2;
 	}
 
-	const conferencia = await resposta.json();
+	// Outro programa pode estar usando esta porta: confere se a resposta é mesmo da demo.
+	let conferencia = null;
+	try {
+		conferencia = await resposta.json();
+	} catch {}
+	if (!ehConferencia(conferencia)) {
+		console.log(
+			`A porta ${porta} respondeu, mas não parece ser este projeto. Talvez outro programa esteja usando essa porta.`,
+		);
+		console.log(
+			"Confira se o npm run dev desta pasta está ligado e em qual porta ele está.",
+		);
+		return 2;
+	}
+
 	let grupoAtual = "";
 	for (const item of conferencia.itens) {
 		if (item.grupo !== grupoAtual) {
@@ -52,7 +66,7 @@ async function conferir() {
 		console.log(`  ${linhaDoItem(item)}`);
 	}
 	console.log(
-		"\nA velocidade da página só é medida no navegador: abra http://localhost:3000",
+		`\nA velocidade da página só é medida no navegador: abra http://localhost:${porta}`,
 	);
 	console.log(`\n${conferencia.frase.titulo} ${conferencia.frase.texto}`);
 	return conferencia.pronto ? 0 : 1;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ehRepoDaDemo, linhaDoItem } from "./lib.mjs";
+import { ehConferencia, ehRepoDaDemo, linhaDoItem } from "./lib.mjs";
 
 describe("ehRepoDaDemo", () => {
 	it.each([
@@ -102,5 +102,39 @@ describe("linhaDoItem", () => {
 				ajuda: "https://a/b",
 			}),
 		).toBe("[!] Pasta é sua: Rode npm run comecar. Como resolver: https://a/b");
+	});
+});
+
+describe("linhaDoItem sem detalhe", () => {
+	it("OK sem detalhe mostra só o título, sem dois-pontos", () => {
+		expect(
+			linhaDoItem({ estado: "ok", titulo: "Git", detalhe: "", ajuda: "x" }),
+		).toBe("[OK] Git");
+	});
+});
+
+describe("ehConferencia", () => {
+	const boa = {
+		itens: [{ estado: "ok", titulo: "Git", grupo: "ferramentas", detalhe: "" }],
+		frase: { titulo: "Quase lá.", texto: "Falta 1 item." },
+		pronto: false,
+	};
+
+	it("aceita a resposta da demo", () => {
+		expect(ehConferencia(boa)).toBe(true);
+	});
+
+	it.each([
+		null,
+		"texto",
+		[],
+		{},
+		{ ...boa, itens: "x" },
+		{ ...boa, itens: [null] },
+		{ ...boa, itens: [{ titulo: "Git" }] },
+		{ ...boa, frase: null },
+		{ ...boa, pronto: "sim" },
+	])("recusa %j", (c) => {
+		expect(ehConferencia(c)).toBe(false);
 	});
 });

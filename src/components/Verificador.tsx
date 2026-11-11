@@ -9,6 +9,24 @@ import { Tempo } from "./Tempo";
 const PROXIMO_PASSO = "https://ia.diegohacks.com.br/cursos/introducao";
 const ESPERA_MS = 20_000; // o servidor responde em até 8 s; isto é só para não esperar para sempre
 
+// Na primeira abertura o Claude Code demora a abrir e alguns itens podem voltar como
+// "não consegui conferir". A segunda pergunta já encontra o Claude pronto, então a tela
+// pergunta de novo, uma vez só. Enquanto isso, `aoParcial` recebe a primeira resposta.
+// Se a segunda pergunta falhar, fica valendo a primeira.
+export async function conferirComNovaTentativa(
+	buscar: () => Promise<Conferencia>,
+	aoParcial: (primeira: Conferencia) => void,
+): Promise<Conferencia> {
+	const primeira = await buscar();
+	if (!primeira.itens.some((i) => i.estado === "nao-conferi")) return primeira;
+	aoParcial(primeira);
+	try {
+		return await buscar();
+	} catch {
+		return primeira;
+	}
+}
+
 const GRUPOS: { id: Grupo; titulo: string }[] = [
 	{ id: "ferramentas", titulo: "Ferramentas" },
 	{ id: "skills", titulo: "Skills" },
@@ -175,6 +193,8 @@ type Props = {
 
 export function Verificador({ inicial }: Props) {
 	const [conferencia, setConferencia] = useState<Conferencia | null>(inicial);
+	// A primeira resposta, enquanto a tela pergunta de novo pelos itens que não deu para conferir.
+	const [parcial, setParcial] = useState<Conferencia | null>(null);
 	const [erro, setErro] = useState(false);
 
 	useEffect(() => {
@@ -182,11 +202,17 @@ export function Verificador({ inicial }: Props) {
 		const controle = new AbortController();
 		let desistiu = false;
 		const relogio = setTimeout(() => controle.abort(), ESPERA_MS);
-		fetch("/api/conferir", { cache: "no-store", signal: controle.signal })
-			.then((r) => {
-				if (!r.ok) throw new Error(String(r.status));
-				return r.json() as Promise<Conferencia>;
-			})
+		const buscar = async () => {
+			const r = await fetch("/api/conferir", {
+				cache: "no-store",
+				signal: controle.signal,
+			});
+			if (!r.ok) throw new Error(String(r.status));
+			return (await r.json()) as Conferencia;
+		};
+		conferirComNovaTentativa(buscar, (primeira) => {
+			if (!desistiu) setParcial(primeira);
+		})
 			.then((c) => {
 				if (!desistiu) setConferencia(c);
 			})
@@ -202,7 +228,12 @@ export function Verificador({ inicial }: Props) {
 	}, [inicial]);
 
 	const topo = topoDaTela(conferencia, erro);
-	const porId = new Map(conferencia?.itens.map((i) => [i.id, i]));
+	// Enquanto pergunta de novo, os itens que não deu para conferir continuam em "conferindo…".
+	const itensNaTela =
+		conferencia?.itens ??
+		parcial?.itens.filter((i) => i.estado !== "nao-conferi") ??
+		[];
+	const porId = new Map(itensNaTela.map((i) => [i.id, i]));
 	const producao = conferencia?.producao === true;
 	const grupos = producao ? GRUPOS.filter((g) => g.id === "seguranca") : GRUPOS;
 	const linhas = producao
@@ -239,7 +270,7 @@ export function Verificador({ inicial }: Props) {
 					>
 						<div className="grupo-topo">
 							<h2 id={`grupo-${g.id}`}>{g.titulo}</h2>
-							{respostas.length > 0 ? (
+							{conferencia && respostas.length > 0 ? (
 								<span className="grupo-conta">
 									{okNoGrupo} de {respostas.length} OK
 								</span>

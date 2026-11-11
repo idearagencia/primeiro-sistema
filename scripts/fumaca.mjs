@@ -25,10 +25,15 @@ const next = fileURLToPath(
 );
 
 // GET com node:http (o fetch não deixa trocar o cabeçalho Host).
-function pedir(porta, caminho, host = `localhost:${porta}`) {
+function pedir(porta, caminho, host = `localhost:${porta}`, extras = {}) {
 	return new Promise((resolve, reject) => {
 		const req = request(
-			{ host: HOST, port: porta, path: caminho, headers: { Host: host } },
+			{
+				host: HOST,
+				port: porta,
+				path: caminho,
+				headers: { ...extras, Host: host },
+			},
 			(res) => {
 				const pedacos = [];
 				res.on("data", (p) => pedacos.push(p));
@@ -188,6 +193,14 @@ async function desenvolvimento() {
 			confere(
 				["Seu computador está pronto!", "Quase lá."].includes(c.frase?.titulo),
 				`frase do topo: "${c.frase?.titulo}"`,
+			);
+
+			const deFora = await pedir(PORTA_DEV, "/api/conferir", undefined, {
+				"Sec-Fetch-Site": "cross-site",
+			});
+			confere(
+				deFora.status === 403,
+				"/api/conferir pedido por outro site recebe 403",
 			);
 		},
 	);

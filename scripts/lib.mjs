@@ -33,10 +33,40 @@ export function linhaDoItem(item) {
 		.replace(/\.$/, "");
 	if (item.estado === "ok") {
 		const curto = detalhe.replace(/^Versão\s+/, "");
+		if (curto === "") return `${marca} ${item.titulo}`;
 		// Versão vai logo depois do nome ("[OK] Git 2.47.1"); frase vai depois de dois-pontos.
 		return /^\d/.test(curto)
 			? `${marca} ${item.titulo} ${curto}`
 			: `${marca} ${item.titulo}: ${curto}`;
 	}
 	return `${marca} ${item.titulo}: ${detalhe}. Como resolver: ${item.ajuda}`;
+}
+
+const ehTexto = (v) => typeof v === "string";
+
+/**
+ * A resposta tem a cara do que a rota /api/conferir da demo devolve?
+ * (Outro programa pode estar usando a mesma porta.)
+ * @param {unknown} c
+ * @returns {boolean}
+ */
+export function ehConferencia(c) {
+	if (c === null || typeof c !== "object") return false;
+	const { itens, frase, pronto } = /** @type {Record<string, any>} */ (c);
+	return (
+		Array.isArray(itens) &&
+		itens.every(
+			(i) =>
+				i !== null &&
+				typeof i === "object" &&
+				ehTexto(i.estado) &&
+				ehTexto(i.titulo) &&
+				ehTexto(i.grupo),
+		) &&
+		frase !== null &&
+		typeof frase === "object" &&
+		ehTexto(frase.titulo) &&
+		ehTexto(frase.texto) &&
+		typeof pronto === "boolean"
+	);
 }

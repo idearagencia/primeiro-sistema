@@ -13,6 +13,14 @@ export async function GET(request: Request) {
 			headers: { "Content-Type": "text/plain; charset=utf-8" },
 		});
 	}
+	// Outro site aberto no navegador não pode pedir a conferência por trás (o navegador manda
+	// Sec-Fetch-Site: cross-site). A própria página manda same-origin; o npm run conferir não manda.
+	if (request.headers.get("sec-fetch-site") === "cross-site") {
+		return new Response("Proibido.", {
+			status: 403,
+			headers: { "Content-Type": "text/plain; charset=utf-8" },
+		});
+	}
 	const r = await verificar(await depsReais(request.headers.get("host")));
 	const corpo: Conferencia = { ...r, frase: frase(r) };
 	return Response.json(corpo, { headers: { "Cache-Control": "no-store" } });
