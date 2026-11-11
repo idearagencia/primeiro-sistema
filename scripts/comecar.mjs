@@ -51,6 +51,27 @@ if (origin !== null && ehRepoDaDemo(origin)) {
 	console.log("Esta pasta já é só sua.");
 }
 
+// Clone por tag deixa o HEAD solto (sem branch): cria a main para guardar as mudanças.
+if (git(["symbolic-ref", "-q", "HEAD"]) === null) {
+	const atual = git(["rev-parse", "HEAD"]);
+	const main = git(["rev-parse", "--verify", "-q", "refs/heads/main"]);
+	if (main === null) {
+		if (git(["switch", "-c", "main"]) === null) {
+			console.log(
+				"Aviso: não consegui criar a branch main. Rode: git switch -c main",
+			);
+		} else {
+			console.log("Criei a branch main para guardar as suas mudanças.");
+		}
+	} else if (main === atual && git(["switch", "main"]) !== null) {
+		console.log("Voltei para a branch main para guardar as suas mudanças.");
+	} else {
+		console.log(
+			"Aviso: já existe uma branch main diferente do ponto onde você está. Não mexi nela.",
+		);
+	}
+}
+
 // O nome nunca é mostrado: só se ele existe. Não é erro, só um aviso.
 const nome = git(["config", "user.name"]);
 if (!nome) {

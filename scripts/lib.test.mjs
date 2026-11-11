@@ -1,5 +1,11 @@
+import net from "node:net";
 import { describe, expect, it } from "vitest";
-import { ehConferencia, ehRepoDaDemo, linhaDoItem } from "./lib.mjs";
+import {
+	ehConferencia,
+	ehRepoDaDemo,
+	linhaDoItem,
+	portaOcupada,
+} from "./lib.mjs";
 
 describe("ehRepoDaDemo", () => {
 	it.each([
@@ -136,5 +142,16 @@ describe("ehConferencia", () => {
 		{ ...boa, pronto: "sim" },
 	])("recusa %j", (c) => {
 		expect(ehConferencia(c)).toBe(false);
+	});
+});
+
+describe("portaOcupada", () => {
+	it("diz que está ocupada quando outro programa usa a porta, e livre depois", async () => {
+		const servidor = net.createServer();
+		await new Promise((ok) => servidor.listen(0, "127.0.0.1", () => ok(null)));
+		const { port } = /** @type {net.AddressInfo} */ (servidor.address());
+		expect(await portaOcupada(port)).toBe(true);
+		await new Promise((ok) => servidor.close(() => ok(null)));
+		expect(await portaOcupada(port)).toBe(false);
 	});
 });

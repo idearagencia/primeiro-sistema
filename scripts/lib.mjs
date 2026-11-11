@@ -1,5 +1,6 @@
 // Funções usadas pelos scripts (npm run comecar/conferir) e pelo verificador.
 // JavaScript puro: os scripts rodam direto no Node, sem compilar.
+import net from "node:net";
 
 const REPO_DA_DEMO =
 	/^(?:https?:\/\/(?:www\.)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)idearagencia\/primeiro-sistema(?:\.git)?\/?$/i;
@@ -69,4 +70,32 @@ export function ehConferencia(c) {
 		ehTexto(frase.texto) &&
 		typeof pronto === "boolean"
 	);
+}
+
+// Tenta ocupar a porta num endereço: true se já tem outro programa nela.
+// Endereço que o computador não tem (ex.: sem IPv6) não conta como ocupado.
+function ocupadaEm(porta, host) {
+	return new Promise((resolve) => {
+		const servidor = net.createServer();
+		servidor.once("error", (erro) => {
+			resolve(
+				/** @type {NodeJS.ErrnoException} */ (erro).code === "EADDRINUSE",
+			);
+		});
+		servidor.listen({ port: porta, host, exclusive: true }, () => {
+			servidor.close(() => resolve(false));
+		});
+	});
+}
+
+/**
+ * Já existe outro programa usando esta porta neste computador (127.0.0.1 ou ::1)?
+ * @param {number} porta
+ * @returns {Promise<boolean>}
+ */
+export async function portaOcupada(porta) {
+	for (const host of ["127.0.0.1", "::1"]) {
+		if (await ocupadaEm(porta, host)) return true;
+	}
+	return false;
 }
