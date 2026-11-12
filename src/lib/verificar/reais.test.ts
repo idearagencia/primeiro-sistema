@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { comCacheDoClaude } from "./reais";
+import { chegouPorHttps, comCacheDoClaude, enderecoDoIcone } from "./reais";
 import type { Resposta, Rodar } from "./rodar";
 
 describe("comCacheDoClaude", () => {
@@ -74,5 +74,52 @@ describe("comCacheDoClaude", () => {
 		const comCache = comCacheDoClaude(rodar, () => 0);
 		await expect(comCache("claude", ["--version"])).rejects.toThrow();
 		expect((await comCache("claude", ["--version"])).ok).toBe(true);
+	});
+});
+
+describe("enderecoDoIcone", () => {
+	const producao = {
+		NODE_ENV: "production",
+		HOSTS_PERMITIDOS: "seudominio.com.br",
+	};
+
+	it("no computador: mesma porta do endereço aberto", () => {
+		expect(enderecoDoIcone("localhost:3111", producao)).toBe(
+			"http://127.0.0.1:3111/icon.svg",
+		);
+	});
+
+	it("num servidor: por dentro, na porta PORT (3000 se não tiver)", () => {
+		expect(enderecoDoIcone("seudominio.com.br", producao)).toBe(
+			"http://127.0.0.1:3000/icon.svg",
+		);
+		expect(
+			enderecoDoIcone("seudominio.com.br", { ...producao, PORT: "8080" }),
+		).toBe("http://127.0.0.1:8080/icon.svg");
+	});
+
+	it("na Vercel: pelo próprio endereço com https", () => {
+		expect(
+			enderecoDoIcone("seudominio.com.br", { ...producao, VERCEL: "1" }),
+		).toBe("https://seudominio.com.br/icon.svg");
+	});
+
+	it("endereço fora da lista: não pede nada", () => {
+		expect(enderecoDoIcone("evil.example", producao)).toBeNull();
+		expect(enderecoDoIcone(null, producao)).toBeNull();
+	});
+});
+
+describe("chegouPorHttps", () => {
+	it.each([
+		["https", true],
+		["HTTPS", true],
+		["https, http", true],
+		["http", false],
+		["http, https", false],
+		["", false],
+		[null, false],
+	] as const)("%j → %s", (proto, esperado) => {
+		expect(chegouPorHttps(proto)).toBe(esperado);
 	});
 });

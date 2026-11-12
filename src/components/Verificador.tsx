@@ -134,7 +134,7 @@ export const ITENS_DA_TELA: {
 
 type Topo = { pose: Pose; titulo: string; texto: string; pronto: boolean };
 
-function topoDaTela(c: Conferencia | null, erro: boolean): Topo {
+export function topoDaTela(c: Conferencia | null, erro: boolean): Topo {
 	if (erro) {
 		return {
 			pose: "pensando",
@@ -152,12 +152,23 @@ function topoDaTela(c: Conferencia | null, erro: boolean): Topo {
 			pronto: false,
 		};
 	}
+	// Em produção: só comemora num endereço da lista aberto com https (cadeado).
 	if (c.producao) {
+		if (c.pronto) {
+			return {
+				pose: "comemorando",
+				titulo: "Você conseguiu!",
+				texto: "Seu sistema está no ar, na internet, com cadeado.",
+				pronto: true,
+			};
+		}
 		return {
-			pose: "comemorando",
-			titulo: "Você conseguiu!",
-			texto: "Seu sistema está no ar, na internet, com cadeado.",
-			pronto: true,
+			pose: "pensando",
+			titulo: "Quase no ar.",
+			texto: c.cadeado
+				? "O endereço tem cadeado, mas faltam proteções. Veja o item abaixo."
+				: "O sistema está ligado, mas este endereço não tem cadeado. Na internet, abra o endereço que começa com https://.",
+			pronto: false,
 		};
 	}
 	return { ...c.frase, pronto: c.pronto };

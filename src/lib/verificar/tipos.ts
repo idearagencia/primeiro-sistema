@@ -15,7 +15,12 @@ export type Item = {
 	ajuda: string; // URL da etapa do guia que resolve
 };
 
-export type Resultado = { itens: Item[]; pronto: boolean; producao: boolean };
+export type Resultado = {
+	itens: Item[];
+	pronto: boolean;
+	producao: boolean;
+	cadeado?: boolean; // só em produção: o pedido chegou por https
+};
 
 // A frase do topo da tela e a pose do mascote que vai com ela.
 export type Frase = {

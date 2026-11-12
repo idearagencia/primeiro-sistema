@@ -27,3 +27,33 @@ jobs:
       - run: npm run test:run
       - run: npm run build
       - run: npm run fumaca
+
+  # A imagem do Dockerfile (a mesma que o Coolify monta): builda, liga e confere por fora.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t primeiro-sistema .
+      - name: Liga o container com um endereço na lista
+        run: >
+          docker run -d --name demo -p 127.0.0.1:3000:3000
+          -e HOSTS_PERMITIDOS=seudominio.com.br primeiro-sistema
+      - name: Espera o HEALTHCHECK dizer que está de pé
+        run: |
+          for i in $(seq 1 30); do
+            estado=$(docker inspect -f '{{.State.Health.Status}}' demo)
+            echo "saúde: $estado"
+            [ "$estado" = healthy ] && exit 0
+            sleep 5
+          done
+          docker logs demo
+          exit 1
+      - name: Confere saúde, lista de endereços e a tela
+        run: |
+          set -e
+          curl -fsS http://127.0.0.1:3000/api/health | grep -q '"ok":true'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' http://127.0.0.1:3000/)" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/conferir)" = 404
+          curl -fsS -H 'Host: seudominio.com.br' -H 'X-Forwarded-Proto: https' http://127.0.0.1:3000/ \
+            | grep -q 'Seu sistema está no ar, na internet, com cadeado.'
+          test "$(docker exec demo id -u)" != 0

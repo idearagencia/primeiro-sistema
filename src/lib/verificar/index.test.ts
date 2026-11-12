@@ -507,10 +507,43 @@ describe("verificar", () => {
 
 	it("em produção não roda comando nenhum", async () => {
 		const espiao = vi.fn();
-		const r = await verificar({ ...tudoCerto, rodar: espiao, producao: true });
+		const r = await verificar({
+			...tudoCerto,
+			rodar: espiao,
+			producao: true,
+			https: true,
+		});
 		expect(espiao).not.toHaveBeenCalled();
 		expect(r.producao).toBe(true);
 		expect(r.itens.map((i) => i.id)).toEqual(["cabecalhos"]);
+		expect(r.pronto).toBe(true);
+		expect(r.cadeado).toBe(true);
+	});
+
+	it("em produção sem https: não está pronto (sem cadeado)", async () => {
+		const r = await verificar({ ...tudoCerto, producao: true });
+		expect(r.cadeado).toBe(false);
+		expect(r.pronto).toBe(false);
+	});
+
+	it("em produção com https mas faltando proteção: não está pronto", async () => {
+		const r = await verificar({
+			...tudoCerto,
+			producao: true,
+			https: true,
+			cabecalhos: { "X-Frame-Options": "DENY" },
+		});
+		expect(r.cadeado).toBe(true);
+		expect(r.pronto).toBe(false);
+	});
+
+	it("em produção com https e cabeçalhos sem ler: comemora (o no-ar confere de fora)", async () => {
+		const r = await verificar({
+			...tudoCerto,
+			producao: true,
+			https: true,
+			cabecalhos: null,
+		});
 		expect(r.pronto).toBe(true);
 	});
 

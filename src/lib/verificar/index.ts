@@ -1,5 +1,5 @@
-import { ehRepoDaDemo } from "../../../scripts/lib.mjs";
-import { hostPermitido } from "./cabecalhos";
+import { cabecalhosFaltando, ehRepoDaDemo } from "../../../scripts/lib.mjs";
+import { hostLocal } from "./cabecalhos";
 import {
 	listaReconhecida,
 	PLUGINS_OBRIGATORIOS,
@@ -16,6 +16,7 @@ export type Deps = {
 	host: string | null; // cabeçalho Host do pedido
 	local: boolean; // o servidor foi ligado pelo `npm run dev` da demo
 	producao: boolean;
+	https?: boolean; // o pedido chegou por https (só conta em produção)
 	// Da resposta da própria demo; null = não deu para ler. Pode chegar como promessa: a leitura
 	// corre junto com os comandos, dentro do mesmo prazo.
 	cabecalhos:
@@ -150,19 +151,6 @@ function cobreEnv(gitignore: string): boolean {
 	return ignorado;
 }
 
-const CABECALHOS_EXIGIDOS: {
-	nome: string;
-	vale: (valor: string) => boolean;
-}[] = [
-	{ nome: "Content-Security-Policy", vale: (v) => v.trim() !== "" },
-	{ nome: "X-Content-Type-Options", vale: (v) => /^nosniff$/i.test(v.trim()) },
-	{ nome: "Referrer-Policy", vale: (v) => v.trim() !== "" },
-	{
-		nome: "X-Frame-Options",
-		vale: (v) => /^(deny|sameorigin)$/i.test(v.trim()),
-	},
-];
-
 function itemCabecalhos(cabecalhos: Record<string, string> | null): Item {
 	const base: Base = {
 		id: "cabecalhos",
@@ -174,13 +162,7 @@ function itemCabecalhos(cabecalhos: Record<string, string> | null): Item {
 	if (cabecalhos === null) {
 		return item(base, "nao-conferi", "Não consegui ler a resposta da página.");
 	}
-	const recebidos = new Map(
-		Object.entries(cabecalhos).map(([k, v]) => [k.toLowerCase(), String(v)]),
-	);
-	const faltando = CABECALHOS_EXIGIDOS.filter((c) => {
-		const valor = recebidos.get(c.nome.toLowerCase());
-		return valor === undefined || !c.vale(valor);
-	}).map((c) => c.nome);
+	const faltando = cabecalhosFaltando(cabecalhos);
 	return faltando.length === 0
 		? item(base, "ok", "A página chega com as quatro proteções.")
 		: item(base, "falta", `Faltou: ${faltando.join(", ")}.`);
@@ -200,12 +182,16 @@ async function conferir(deps: Deps, prazo: Prazo): Promise<Resultado> {
 	const lendoCabecalhos = lerCabecalhos(deps.cabecalhos, prazo);
 
 	// Em produção a demo não confere o computador: um servidor não sai contando o que tem.
+	// "Pronto" em produção = chegou por https (cadeado) e nenhuma proteção faltando. Se não deu
+	// para ler os cabeçalhos por dentro, quem confere é o `npm run no-ar`, de fora.
 	if (deps.producao) {
 		const cabecalhos = itemCabecalhos(await lendoCabecalhos);
+		const cadeado = deps.https === true;
 		return {
 			itens: [cabecalhos],
-			pronto: cabecalhos.estado === "ok",
+			pronto: cadeado && cabecalhos.estado !== "falta",
 			producao: true,
+			cadeado,
 		};
 	}
 
@@ -367,7 +353,7 @@ async function conferir(deps: Deps, prazo: Prazo): Promise<Resultado> {
 					"falta",
 					"O servidor não foi ligado pelo npm run dev desta pasta.",
 				)
-			: !hostPermitido(deps.host)
+			: !hostLocal(deps.host)
 				? item(baseLocal, "falta", "O pedido não veio deste computador.")
 				: item(baseLocal, "ok", "O servidor só responde no seu computador."),
 	);
