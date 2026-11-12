@@ -1,5 +1,5 @@
 import { ehRepoDaDemo } from "../../../scripts/lib.mjs";
-import { hostPermitido } from "./cabecalhos";
+import { hostLocal } from "./cabecalhos";
 import {
 	listaReconhecida,
 	PLUGINS_OBRIGATORIOS,
@@ -367,7 +367,7 @@ async function conferir(deps: Deps, prazo: Prazo): Promise<Resultado> {
 					"falta",
 					"O servidor não foi ligado pelo npm run dev desta pasta.",
 				)
-			: !hostPermitido(deps.host)
+			: !hostLocal(deps.host)
 				? item(baseLocal, "falta", "O pedido não veio deste computador.")
 				: item(baseLocal, "ok", "O servidor só responde no seu computador."),
 	);
