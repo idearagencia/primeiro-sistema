@@ -1,0 +1,15 @@
+# Nada disto entra na imagem: dependências e build são refeitos lá dentro, e segredo nunca entra.
+.git
+.github
+.next
+node_modules
+coverage
+*.tsbuildinfo
+next-env.d.ts
+.env
+.env.*
+*.pem
+npm-debug.log*
+.DS_Store
+Dockerfile
+.dockerignore
