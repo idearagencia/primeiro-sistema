@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { hostPermitido } from "./cabecalhos";
+import { hostLocal, hostPermitido } from "./cabecalhos";
 import type { Deps } from "./index";
 import { type Resposta, type Rodar, rodar } from "./rodar";
 
@@ -50,15 +50,32 @@ async function lerGitignore(): Promise<string | null> {
 	}
 }
 
+// Onde pedir o arquivo pequeno à própria demo.
+// - No computador: na mesma porta do endereço aberto.
+// - Na Vercel: pelo próprio endereço com https (lá não existe "127.0.0.1" do sistema).
+// - Num servidor (Docker/Coolify): por dentro, na porta em que o next start escuta (PORT).
+// O host já passou pela lista, então nunca é um endereço qualquer.
+export function enderecoDoIcone(
+	host: string | null,
+	env: Record<string, string | undefined> = process.env,
+): string | null {
+	if (host === null || !hostPermitido(host, env)) return null;
+	if (hostLocal(host)) {
+		return `http://127.0.0.1:${host.split(":")[1] ?? "80"}/icon.svg`;
+	}
+	if (env.VERCEL === "1") return `https://${host}/icon.svg`;
+	return `http://127.0.0.1:${env.PORT || "3000"}/icon.svg`;
+}
+
 // Pede um arquivo pequeno à própria demo e lê os cabeçalhos que chegaram de verdade.
 // (Pedir "/" chamaria esta conferência de novo, sem fim.)
 async function lerCabecalhos(
 	host: string | null,
 ): Promise<Record<string, string> | null> {
-	if (host === null || !hostPermitido(host)) return null;
-	const porta = host.split(":")[1] ?? "80";
+	const endereco = enderecoDoIcone(host);
+	if (endereco === null) return null;
 	try {
-		const r = await fetch(`http://127.0.0.1:${porta}/icon.svg`, {
+		const r = await fetch(endereco, {
 			method: "HEAD",
 			cache: "no-store",
 			signal: AbortSignal.timeout(5000),
@@ -73,10 +90,21 @@ async function lerCabecalhos(
 	}
 }
 
+// Na internet o cadeado (https) fica na plataforma (Vercel ou o proxy do Coolify), que avisa o
+// sistema pelo cabeçalho X-Forwarded-Proto. Só serve para escolher a tela: quem confere o
+// cadeado de verdade, de fora, é o `npm run no-ar`.
+export function chegouPorHttps(proto: string | null): boolean {
+	return proto?.split(",")[0].trim().toLowerCase() === "https";
+}
+
 // As dependências de verdade, usadas pela página e pela rota /api/conferir.
 // Os cabeçalhos vão como promessa: o verificar lê junto com os comandos, dentro do prazo.
-export async function depsReais(host: string | null): Promise<Deps> {
+export async function depsReais(
+	host: string | null,
+	https = false,
+): Promise<Deps> {
 	return {
+		https,
 		rodar: rodarComCache,
 		node: process.versions.node,
 		gitignore: await lerGitignore(),

@@ -12,6 +12,7 @@ const ORCAMENTO_BYTES = 722_258; // medido: 601_881 bytes (2026-11-10, Next 16.4
 const HOST = "127.0.0.1";
 const PORTA_PRODUCAO = 3111;
 const PORTA_DEV = 3112;
+const HOST_DA_LISTA = "seudominio.com.br";
 const CABECALHOS = [
 	"content-security-policy",
 	"x-content-type-options",
@@ -131,7 +132,12 @@ async function producao() {
 	await bloco(
 		"Produção (next start)",
 		[next, "start", "-H", HOST, "-p", String(PORTA_PRODUCAO)],
-		{ NODE_ENV: "production" },
+		// Um endereço de exemplo na lista, como a Vercel ou o Coolify fariam.
+		{
+			NODE_ENV: "production",
+			PORT: String(PORTA_PRODUCAO),
+			HOSTS_PERMITIDOS: HOST_DA_LISTA,
+		},
 		async (filho) => {
 			const r = await esperarNoAr(PORTA_PRODUCAO, 60_000, filho);
 			confere(r.status === 200, "GET / responde 200");
@@ -139,12 +145,34 @@ async function producao() {
 				confere(Boolean(r.cabecalhos[c]), `GET / traz ${c}`);
 			}
 			confere(
-				r.texto.includes("Você conseguiu!"),
-				"a tela de produção comemora",
+				r.texto.includes("Quase no ar.") &&
+					!r.texto.includes("Você conseguiu!"),
+				"sem cadeado (http), a tela de produção não comemora",
+			);
+
+			const noAr = await pedir(PORTA_PRODUCAO, "/", HOST_DA_LISTA, {
+				"X-Forwarded-Proto": "https",
+			});
+			confere(noAr.status === 200, "endereço da lista responde 200");
+			confere(
+				noAr.texto.includes(
+					"Seu sistema está no ar, na internet, com cadeado.",
+				),
+				"endereço da lista com https: Seu sistema está no ar",
+			);
+			confere(
+				noAr.texto.includes("A página chega com as quatro proteções."),
+				"endereço da lista: a tela leu as quatro proteções",
 			);
 
 			const evil = await pedir(PORTA_PRODUCAO, "/", "evil.example");
 			confere(evil.status === 403, "Host de fora recebe 403");
+
+			const saude = await pedir(PORTA_PRODUCAO, "/api/health", HOST_DA_LISTA);
+			confere(
+				saude.status === 200 && JSON.parse(saude.texto).ok === true,
+				'/api/health responde {"ok":true}',
+			);
 
 			const api = await pedir(PORTA_PRODUCAO, "/api/conferir");
 			confere(api.status === 404, "/api/conferir não existe em produção");
@@ -173,7 +201,12 @@ async function desenvolvimento() {
 	await bloco(
 		"Desenvolvimento (npm run dev)",
 		[fileURLToPath(new URL("./dev.mjs", import.meta.url))],
-		{ PORT: String(PORTA_DEV), NODE_ENV: "development" },
+		// A lista não vale em desenvolvimento: só o computador.
+		{
+			PORT: String(PORTA_DEV),
+			NODE_ENV: "development",
+			HOSTS_PERMITIDOS: HOST_DA_LISTA,
+		},
 		async (filho) => {
 			const r = await esperarNoAr(PORTA_DEV, 60_000, filho);
 			confere(r.status === 200, "GET / responde 200 em até 60 s");
@@ -193,6 +226,12 @@ async function desenvolvimento() {
 			confere(
 				["Seu computador está pronto!", "Quase lá."].includes(c.frase?.titulo),
 				`frase do topo: "${c.frase?.titulo}"`,
+			);
+
+			const daLista = await pedir(PORTA_DEV, "/", HOST_DA_LISTA);
+			confere(
+				daLista.status === 403,
+				"em desenvolvimento, endereço da lista recebe 403",
 			);
 
 			const deFora = await pedir(PORTA_DEV, "/api/conferir", undefined, {

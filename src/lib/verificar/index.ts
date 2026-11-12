@@ -16,6 +16,7 @@ export type Deps = {
 	host: string | null; // cabeçalho Host do pedido
 	local: boolean; // o servidor foi ligado pelo `npm run dev` da demo
 	producao: boolean;
+	https?: boolean; // o pedido chegou por https (só conta em produção)
 	// Da resposta da própria demo; null = não deu para ler. Pode chegar como promessa: a leitura
 	// corre junto com os comandos, dentro do mesmo prazo.
 	cabecalhos:
@@ -200,12 +201,16 @@ async function conferir(deps: Deps, prazo: Prazo): Promise<Resultado> {
 	const lendoCabecalhos = lerCabecalhos(deps.cabecalhos, prazo);
 
 	// Em produção a demo não confere o computador: um servidor não sai contando o que tem.
+	// "Pronto" em produção = chegou por https (cadeado) e nenhuma proteção faltando. Se não deu
+	// para ler os cabeçalhos por dentro, quem confere é o `npm run no-ar`, de fora.
 	if (deps.producao) {
 		const cabecalhos = itemCabecalhos(await lendoCabecalhos);
+		const cadeado = deps.https === true;
 		return {
 			itens: [cabecalhos],
-			pronto: cabecalhos.estado === "ok",
+			pronto: cadeado && cabecalhos.estado !== "falta",
 			producao: true,
+			cadeado,
 		};
 	}
 
