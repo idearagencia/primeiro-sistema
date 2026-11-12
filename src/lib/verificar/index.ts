@@ -1,4 +1,4 @@
-import { ehRepoDaDemo } from "../../../scripts/lib.mjs";
+import { cabecalhosFaltando, ehRepoDaDemo } from "../../../scripts/lib.mjs";
 import { hostLocal } from "./cabecalhos";
 import {
 	listaReconhecida,
@@ -151,19 +151,6 @@ function cobreEnv(gitignore: string): boolean {
 	return ignorado;
 }
 
-const CABECALHOS_EXIGIDOS: {
-	nome: string;
-	vale: (valor: string) => boolean;
-}[] = [
-	{ nome: "Content-Security-Policy", vale: (v) => v.trim() !== "" },
-	{ nome: "X-Content-Type-Options", vale: (v) => /^nosniff$/i.test(v.trim()) },
-	{ nome: "Referrer-Policy", vale: (v) => v.trim() !== "" },
-	{
-		nome: "X-Frame-Options",
-		vale: (v) => /^(deny|sameorigin)$/i.test(v.trim()),
-	},
-];
-
 function itemCabecalhos(cabecalhos: Record<string, string> | null): Item {
 	const base: Base = {
 		id: "cabecalhos",
@@ -175,13 +162,7 @@ function itemCabecalhos(cabecalhos: Record<string, string> | null): Item {
 	if (cabecalhos === null) {
 		return item(base, "nao-conferi", "Não consegui ler a resposta da página.");
 	}
-	const recebidos = new Map(
-		Object.entries(cabecalhos).map(([k, v]) => [k.toLowerCase(), String(v)]),
-	);
-	const faltando = CABECALHOS_EXIGIDOS.filter((c) => {
-		const valor = recebidos.get(c.nome.toLowerCase());
-		return valor === undefined || !c.vale(valor);
-	}).map((c) => c.nome);
+	const faltando = cabecalhosFaltando(cabecalhos);
 	return faltando.length === 0
 		? item(base, "ok", "A página chega com as quatro proteções.")
 		: item(base, "falta", `Faltou: ${faltando.join(", ")}.`);

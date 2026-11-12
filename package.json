@@ -10,6 +10,7 @@
 		"comecar": "node scripts/comecar.mjs",
 		"dev": "node scripts/dev.mjs",
 		"conferir": "node scripts/conferir.mjs",
+		"no-ar": "node scripts/no-ar.mjs",
 		"build": "next build",
 		"start": "next start -H 127.0.0.1",
 		"check": "biome check --write && tsc --noEmit",
